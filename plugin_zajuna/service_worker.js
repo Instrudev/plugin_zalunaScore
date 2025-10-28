@@ -11,9 +11,15 @@ Evalúa la evidencia en una escala 0–100. Devuelve SOLO JSON:
 Usa la rúbrica proporcionada. Español.
 `;
 
+  const topicLine = item.manualTopic
+    ? `Tema proporcionado por el docente: ${item.manualTopic}`
+    : "(sin tema proporcionado manualmente)";
+
   const user = `
 RÚBRICA:
 ${rubric || "(sin rúbrica: evalúa pertinencia, claridad, profundidad, estructura y originalidad)"}
+
+${topicLine}
 
 EVIDENCIA:
 Título: ${item.title}
