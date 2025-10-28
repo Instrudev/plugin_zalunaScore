@@ -1,5 +1,9 @@
 const MODEL = "gemini-2.5-flash";
 
+function isPDF(url = "") {
+  return /\.pdf(\?|#|$)/i.test(url);
+}
+
 async function callGemini(apiKey, item, rubric) {
   const system = `
 Eres un evaluador académico. 
@@ -11,9 +15,15 @@ Evalúa la evidencia en una escala 0–100. Devuelve SOLO JSON:
 Usa la rúbrica proporcionada. Español.
 `;
 
+  const topicLine = item.manualTopic
+    ? `Tema proporcionado por el docente: ${item.manualTopic}`
+    : "(sin tema proporcionado manualmente)";
+
   const user = `
 RÚBRICA:
 ${rubric || "(sin rúbrica: evalúa pertinencia, claridad, profundidad, estructura y originalidad)"}
+
+${topicLine}
 
 EVIDENCIA:
 Título: ${item.title}
@@ -46,6 +56,17 @@ chrome.runtime.onMessage.addListener((msg,_s,sendResponse)=>{
         const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
         const results=[];
         for(const it of msg.items){
+          const hasNonPdfAttachment = Array.isArray(it.files) && it.files.some(f=>!isPDF(f.url||""));
+          if(hasNonPdfAttachment){
+            const zeroResult={
+              rowId:it.rowId,
+              score:0,
+              feedback:"Cordial Saludo, Revisada tu evidencia. Se detectaron archivos que no están en formato PDF, por lo que no fue posible evaluarla. Por favor adjunta el documento en PDF."
+            };
+            results.push(zeroResult);
+            await chrome.tabs.sendMessage(tab.id,{type:"APPLY_GRADES",payload:[zeroResult]});
+            continue;
+          }
           const g=await callGemini(cfg.apiKey,it,cfg.rubric);
           results.push(g);
           await chrome.tabs.sendMessage(tab.id,{type:"APPLY_GRADES",payload:[g]});

@@ -25,7 +25,7 @@ document.getElementById('run').onclick = async () => {
   }
 
   // Añadimos el tema manual al objeto antes de enviarlo
-  const items = res.items.map(it => ({ ...it, evidenceName: topic }));
+  const items = res.items.map(it => ({ ...it, manualTopic: topic }));
 
   out.textContent = `Calificando ${items.length} evidencia(s)...`;
   const graded = await chrome.runtime.sendMessage({type:"GRADE_AND_APPLY", items});
