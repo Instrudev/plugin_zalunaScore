@@ -1,0 +1,22 @@
+
+
+{
+  "manifest_version": 3,
+  "name": "AutoCalificador Gemini (2.5-Flash)",
+  "version": "0.4.0",
+  "description": "Califica evidencias (0-100) leyendo PDFs con pdf.js y Gemini 2.5-Flash.",
+  "permissions": ["storage", "scripting", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "action": { "default_title": "Calificar con Gemini", "default_popup": "popup.html" },
+  "background": { "service_worker": "service_worker.js" },
+"options_page": "options.html",
+  "content_scripts": [{
+    "matches": ["*://*/*"],
+     "js": ["lib/pdfjs/pdf.js", "content.js"],
+    "run_at": "document_idle"
+  }],
+  "web_accessible_resources": [{
+    "resources": ["lib/pdfjs/pdf.worker.js"],
+    "matches": ["<all_urls>"]
+  }]
+}
