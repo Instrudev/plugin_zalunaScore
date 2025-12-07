@@ -1,8 +1,8 @@
 const MODEL = "gemini-2.5-flash";
 
-function isPDF(url = "") {
-  return /\.pdf(\?|#|$)/i.test(url);
-}
+function isPDF(url = "") { return /\.pdf(\?|#|$)/i.test(url); }
+function isDocx(url = "") { return /\.docx(\?|#|$)/i.test(url); }
+function isImage(url = "") { return /\.(png|jpe?g|gif|bmp|webp)(\?|#|$)/i.test(url); }
 
 async function callGemini(apiKey, item, rubric) {
   const system = `
@@ -56,12 +56,16 @@ chrome.runtime.onMessage.addListener((msg,_s,sendResponse)=>{
         const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
         const results=[];
         for(const it of msg.items){
-          const hasNonPdfAttachment = Array.isArray(it.files) && it.files.some(f=>!isPDF(f.url||""));
-          if(hasNonPdfAttachment){
+          const hasUnsupportedAttachment = Array.isArray(it.files)
+            && it.files.some(f=>{
+              const url = f.url || "";
+              return !isPDF(url) && !isDocx(url) && !isImage(url);
+            });
+          if(hasUnsupportedAttachment){
             const zeroResult={
               rowId:it.rowId,
               score:0,
-              feedback:"Cordial Saludo, Revisada tu evidencia. Se detectaron archivos que no están en formato PDF, por lo que no fue posible evaluarla. Por favor adjunta el documento en PDF."
+              feedback:"Cordial Saludo, Revisada tu evidencia. Se detectaron archivos que no están en formato PDF, DOCX o imagen, por lo que no fue posible evaluarla. Por favor adjunta el documento en un formato compatible."
             };
             results.push(zeroResult);
             await chrome.tabs.sendMessage(tab.id,{type:"APPLY_GRADES",payload:[zeroResult]});
