@@ -36,7 +36,8 @@ ${item.text}
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    response_format: { type: "json_object" }
+    response_format: { type: "json_object" },
+    max_output_tokens: 400
   };
   const resp = await fetch("https://api.openai.com/v1/responses",{
     method:"POST",
@@ -46,7 +47,14 @@ ${item.text}
     },
     body:JSON.stringify(body)
   });
-  if(!resp.ok) throw new Error("OpenAI HTTP "+resp.status);
+  if(!resp.ok){
+    let detail="";
+    try{
+      const errBody=await resp.json();
+      detail=errBody?.error?.message?`: ${errBody.error.message}`:"";
+    }catch{}
+    throw new Error("OpenAI HTTP "+resp.status+detail);
+  }
   const data = await resp.json();
   const text = data?.output?.[0]?.content?.[0]?.text || "{}";
 
