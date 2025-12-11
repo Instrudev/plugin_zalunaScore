@@ -1,17 +1,15 @@
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gpt-4.1";
 
-function isPDF(url = "") {
-  return /\.pdf(\?|#|$)/i.test(url);
-}
+function isPDF(url = "") { return /\.pdf(\?|#|$)/i.test(url); }
+function isDocx(url = "") { return /\.docx(\?|#|$)/i.test(url); }
+function isImage(url = "") { return /\.(png|jpe?g|gif|bmp|webp)(\?|#|$)/i.test(url); }
 
-async function callGemini(apiKey, item, rubric) {
+async function callOpenAI(apiKey, item, rubric) {
   const system = `
-Eres un evaluador académico. 
-Evalúa la evidencia en una escala 0–100. Devuelve SOLO JSON:
-{
- "score": number,
- "feedback": "Cordial Saludo, Revisada tu evidencia ... (120 palabras máx, tono respetuoso, fortalezas y mejoras)"
-}
+Eres un evaluador académico.
+Devuelve siempre un JSON válido con:
+- score (entero 0-100)
+- feedback (máximo 30 palabras, tono académico)
 Usa la rúbrica proporcionada. Español.
 `;
 
@@ -32,19 +30,44 @@ Contenido visible:
 ${item.text}
 `;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const body = {
-    contents: [{role:"user",parts:[{text:system+"\n\n"+user}]}],
-    generationConfig:{responseMimeType:"application/json"}
+    model: MODEL,
+    input: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    response_format: { type: "json_object" },
+    max_output_tokens: 400
   };
-  const resp = await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  if(!resp.ok) throw new Error("Gemini HTTP "+resp.status);
+  const resp = await fetch("https://api.openai.com/v1/responses",{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "Authorization":`Bearer ${apiKey}`
+    },
+    body:JSON.stringify(body)
+  });
+  if(!resp.ok){
+    let detail="";
+    try{
+      const errBody=await resp.json();
+      detail=errBody?.error?.message?`: ${errBody.error.message}`:"";
+    }catch{}
+    throw new Error("OpenAI HTTP "+resp.status+detail);
+  }
   const data = await resp.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+  const text = data?.output?.[0]?.content?.[0]?.text || "{}";
+
+  const limitFeedback=(msg)=>{
+    const words=String(msg||"").trim().split(/\s+/).filter(Boolean);
+    const trimmed=words.slice(0,30).join(" ");
+    return trimmed||"Cordial saludo. No se encontró información suficiente para evaluar la evidencia.";
+  };
+
   let parsed={};
   try{parsed=JSON.parse(text);}catch{parsed={};}
   const score=Math.round(Math.max(0,Math.min(100,Number(parsed.score)||0)));
-  const feedback=parsed.feedback||"Cordial Saludo, Revisada tu evidencia. No se encontró información suficiente.";
+  const feedback=limitFeedback(parsed.feedback);
   return {rowId:item.rowId,score,feedback};
 }
 
@@ -56,18 +79,22 @@ chrome.runtime.onMessage.addListener((msg,_s,sendResponse)=>{
         const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
         const results=[];
         for(const it of msg.items){
-          const hasNonPdfAttachment = Array.isArray(it.files) && it.files.some(f=>!isPDF(f.url||""));
-          if(hasNonPdfAttachment){
+          const hasUnsupportedAttachment = Array.isArray(it.files)
+            && it.files.some(f=>{
+              const url = f.url || "";
+              return !isPDF(url) && !isDocx(url) && !isImage(url);
+            });
+          if(hasUnsupportedAttachment){
             const zeroResult={
               rowId:it.rowId,
               score:0,
-              feedback:"Cordial Saludo, Revisada tu evidencia. Se detectaron archivos que no están en formato PDF, por lo que no fue posible evaluarla. Por favor adjunta el documento en PDF."
+              feedback:"Cordial Saludo, Revisada tu evidencia. Se detectaron archivos que no están en formato PDF, DOCX o imagen, por lo que no fue posible evaluarla. Por favor adjunta el documento en un formato compatible."
             };
             results.push(zeroResult);
             await chrome.tabs.sendMessage(tab.id,{type:"APPLY_GRADES",payload:[zeroResult]});
             continue;
           }
-          const g=await callGemini(cfg.apiKey,it,cfg.rubric);
+          const g=await callOpenAI(cfg.apiKey,it,cfg.rubric);
           results.push(g);
           await chrome.tabs.sendMessage(tab.id,{type:"APPLY_GRADES",payload:[g]});
         }
